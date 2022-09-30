@@ -1,0 +1,82 @@
+---
+title: "Geographic Data"
+output: html_document
+---
+
+```{r}
+`%>%` <- magrittr::`%>%`
+```
+
+```{r}
+tl_2020_us_county <- rgdal::readOGR(dsn = "geographic/tl_2020_us_county/")
+tl_2020_us_state <- rgdal::readOGR(dsn = "geographic/tl_2020_us_state/")
+FY2017_Q4_Counties <- rgdal::readOGR(dsn = "geographic/FY2017_Q4_Counties/")
+FY2017_Q4_VISN <- rgdal::readOGR(dsn = "geographic/FY2017_Q4_VISN/")
+visn_name <- readr::read_delim(
+  file = "geographic/visn_name.txt",
+  col_names = c("VISN", "VISNNAME"), 
+  trim_ws = TRUE
+) 
+```
+
+```{r}
+county_state <- dplyr::left_join(
+  x = tibble::tibble(tl_2020_us_county@data) %>% 
+    dplyr::select(FIPS = GEOID, STATEFP, COUNTYFP, NAME, NAMELSAD),
+  y = tibble::tibble(tl_2020_us_state@data) %>% 
+    dplyr::select(STATEFP =  GEOID, ST = STUSPS, STNAME = NAME),
+  by = "STATEFP"
+)
+county_state
+```
+
+```{r}
+county_visn <- dplyr::left_join(
+  x = tibble::tibble(FY2017_Q4_Counties@data) %>%
+    dplyr::select(FIPS, COUNTY_NAME = NAME, STATE_FIPS, STATE_NAME, ST, VISN),
+  # https://www.va.gov/HEALTH/visns.asp
+  y = visn_name %>%
+    dplyr::mutate(
+      VISN = stringr::str_pad(
+        stringr::str_replace(VISN, pattern = "VISN ", replacement = ""),
+        width = 2,
+        pad = "0"
+      ),
+      VISNNAME = stringr::str_trim(VISNNAME)
+    ),
+  by = "VISN"
+)
+county_visn
+```
+
+```{r}
+county_state_visn <- dplyr::left_join(
+  x = county_state %>% dplyr::select(-STATEFP, -COUNTYFP),
+  y = county_visn %>% dplyr::select(FIPS, VISN, VISNNAME),
+  by = "FIPS"
+)
+county_state_visn
+```
+
+```{r}
+geographic <- list(
+  county_state_visn = county_state_visn,
+  FY2017_Q4_Counties = FY2017_Q4_Counties,
+  FY2017_Q4_VISN = FY2017_Q4_VISN,
+  tl_2020_us_county = tl_2020_us_county,
+  tl_2020_us_state = tl_2020_us_state
+)
+```
+
+```{r}
+saveRDS(geographic, file = "geographic.rds")
+```
+
+```{r}
+colSums(is.na(county_state_visn))
+county_state_visn %>% dplyr::filter(is.na(VISN))
+```
+
+```{r}
+proc.time()
+```

@@ -1,0 +1,189 @@
+---
+title: "Demographic Data"
+output: html_document
+---
+
+```{r}
+`%>%` <- magrittr::`%>%`
+```
+
+```{r}
+set.seed(1)
+```
+
+```{r}
+# https://www2.census.gov/programs-surveys/popest/datasets/2020-2021/counties/asrh/cc-est2021-all.csv
+cc_est2021_all <- readr::read_csv(file = "demographic/cc-est2021-all.csv")
+```
+
+```{r}
+pop <- dplyr::left_join(
+  x = cc_est2021_all %>%
+    dplyr::mutate(FIPS = paste0(STATE, COUNTY)) %>%
+    dplyr::filter(AGEGRP == 0) %>%
+    dplyr::select(YEAR, FIPS, STATE, TOT_POP),
+  y = readRDS("geographic.rds")$county_state_visn,
+  by = "FIPS"
+) %>%
+  dplyr::select(YEAR, FIPS, ST, VISN, TOT_POP)
+```
+
+```{r}
+# https://en.wikipedia.org/wiki/Demographics_of_the_United_States#Age_and_sex_distribution
+
+# Sex distribution (2021)
+prob1 <- c(
+  "male"= 49.5,
+  "female" = 50.5
+) / 100
+
+# Age distribution (2021)
+prob2 <- c(
+  "0 - 14 years" = 18.2,
+  "15 - 24 years" = 13.0,
+  "25 - 54 years" = 39.0,
+  "55 - 64 years" = 12.9,
+  "65 years and over" = 16.8
+) / 100
+
+# Distribution of Total Population by Race (2020)
+prob3 <- c(
+  "White" = 61.6,
+  "Black or African American" = 12.4,
+  "American Indian and Alaska Native" = 1.1,
+  "Asian and Native Hawaiian and other Pacific Islander" = 6.2,
+  "Some other race" = 8.4,
+  "Two or more races" = 10.2
+) / 100
+```
+
+```{r}
+make_data <- function(pheno, pop, p = 0.05, d = 0.01) {
+  pop %>%
+    dplyr::mutate(
+      CASES = sapply(TOT_POP, function(x) rbinom(n = 1, size = x, prob = p + runif(1, -d, d))),
+      PREV = CASES / TOT_POP * 100,
+      setNames(
+        data.frame(t(sapply(CASES, function(x) rmultinom(1, size = x, prob = prob1)))),
+        nm = paste0("SEX_", 1:length(prob1))
+      ),
+      setNames(
+        data.frame(t(sapply(CASES, function(x) rmultinom(1, size = x, prob = prob2)))),
+        nm = paste0("AGEGRP_", 1:length(prob2))
+      ),
+      setNames(
+        data.frame(t(sapply(CASES, function(x) rmultinom(1, size = x, prob = prob3)))),
+        nm = paste0("RACE_", 1:length(prob3))
+      )
+    ) %>%
+    dplyr::mutate(PHENO = pheno, .before = YEAR)
+}
+```
+
+```{r}
+df <- purrr::map_df(.x = LETTERS[1:5], .f = make_data, pop = pop)
+df
+```
+
+```{r}
+demographic <- list(
+  county = df %>%
+    dplyr::select(-ST, -VISN) %>%
+    dplyr::mutate(
+      SEX_1 = round(SEX_1 / CASES * 100, 1),
+      SEX_2 = round(SEX_2 / CASES * 100, 1),
+      AGEGRP_1 = round(AGEGRP_1 / CASES * 100, 1),
+      AGEGRP_2 = round(AGEGRP_2 / CASES * 100, 1),
+      AGEGRP_3 = round(AGEGRP_3 / CASES * 100, 1),
+      AGEGRP_4 = round(AGEGRP_4 / CASES * 100, 1),
+      AGEGRP_5 = round(AGEGRP_5 / CASES * 100, 1),
+      RACE_1 = round(RACE_1 / CASES * 100, 1),
+      RACE_2 = round(RACE_2 / CASES * 100, 1),
+      RACE_3 = round(RACE_3 / CASES * 100, 1),
+      RACE_4 = round(RACE_4 / CASES * 100, 1),
+      RACE_5 = round(RACE_5 / CASES * 100, 1),
+      RACE_6 = round(RACE_6 / CASES * 100, 1)
+    ),
+  state = df %>%
+    dplyr::group_by(PHENO, YEAR, ST) %>%
+    dplyr::summarise(
+      TOT_POP = sum(TOT_POP),
+      CASES = sum(CASES),
+      PREV = CASES / TOT_POP * 100,
+      SEX_1 = sum(SEX_1),
+      SEX_2 = sum(SEX_2),
+      AGEGRP_1 = sum(AGEGRP_1),
+      AGEGRP_2 = sum(AGEGRP_2),
+      AGEGRP_3 = sum(AGEGRP_3),
+      AGEGRP_4 = sum(AGEGRP_4),
+      AGEGRP_5 = sum(AGEGRP_5),
+      RACE_1 = sum(RACE_1),
+      RACE_2 = sum(RACE_2),
+      RACE_3 = sum(RACE_3),
+      RACE_4 = sum(RACE_4),
+      RACE_5 = sum(RACE_5),
+      RACE_6 = sum(RACE_6),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      SEX_1 = round(SEX_1 / CASES * 100, 1),
+      SEX_2 = round(SEX_2 / CASES * 100, 1),
+      AGEGRP_1 = round(AGEGRP_1 / CASES * 100, 1),
+      AGEGRP_2 = round(AGEGRP_2 / CASES * 100, 1),
+      AGEGRP_3 = round(AGEGRP_3 / CASES * 100, 1),
+      AGEGRP_4 = round(AGEGRP_4 / CASES * 100, 1),
+      AGEGRP_5 = round(AGEGRP_5 / CASES * 100, 1),
+      RACE_1 = round(RACE_1 / CASES * 100, 1),
+      RACE_2 = round(RACE_2 / CASES * 100, 1),
+      RACE_3 = round(RACE_3 / CASES * 100, 1),
+      RACE_4 = round(RACE_4 / CASES * 100, 1),
+      RACE_5 = round(RACE_5 / CASES * 100, 1),
+      RACE_6 = round(RACE_6 / CASES * 100, 1)
+    ),
+  visn = df %>%
+    dplyr::group_by(PHENO, YEAR, VISN) %>%
+    dplyr::summarise(
+      TOT_POP = sum(TOT_POP),
+      CASES = sum(CASES),
+      PREV = CASES / TOT_POP * 100,
+      SEX_1 = sum(SEX_1),
+      SEX_2 = sum(SEX_2),
+      AGEGRP_1 = sum(AGEGRP_1),
+      AGEGRP_2 = sum(AGEGRP_2),
+      AGEGRP_3 = sum(AGEGRP_3),
+      AGEGRP_4 = sum(AGEGRP_4),
+      AGEGRP_5 = sum(AGEGRP_5),
+      RACE_1 = sum(RACE_1),
+      RACE_2 = sum(RACE_2),
+      RACE_3 = sum(RACE_3),
+      RACE_4 = sum(RACE_4),
+      RACE_5 = sum(RACE_5),
+      RACE_6 = sum(RACE_6),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      SEX_1 = round(SEX_1 / CASES * 100, 1),
+      SEX_2 = round(SEX_2 / CASES * 100, 1),
+      AGEGRP_1 = round(AGEGRP_1 / CASES * 100, 1),
+      AGEGRP_2 = round(AGEGRP_2 / CASES * 100, 1),
+      AGEGRP_3 = round(AGEGRP_3 / CASES * 100, 1),
+      AGEGRP_4 = round(AGEGRP_4 / CASES * 100, 1),
+      AGEGRP_5 = round(AGEGRP_5 / CASES * 100, 1),
+      RACE_1 = round(RACE_1 / CASES * 100, 1),
+      RACE_2 = round(RACE_2 / CASES * 100, 1),
+      RACE_3 = round(RACE_3 / CASES * 100, 1),
+      RACE_4 = round(RACE_4 / CASES * 100, 1),
+      RACE_5 = round(RACE_5 / CASES * 100, 1),
+      RACE_6 = round(RACE_6 / CASES * 100, 1)
+    )
+)
+demographic
+```
+
+```{r}
+saveRDS(object = demographic, file = "demographic.rds")
+```
+
+```{r}
+proc.time()
+```
